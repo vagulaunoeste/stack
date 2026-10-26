@@ -37,12 +37,13 @@ input,select{width:100%;font:inherit;font-size:17px;padding:14px;border:2px soli
 @media(prefers-reduced-motion:reduce){#wd{transition-duration:.01s}.steps i.cur{animation:none}}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 4px;border-bottom:1px solid var(--ln);text-align:left}.w{color:var(--ok)}.l{color:var(--bd)}.ov{overflow-x:auto}
 #msg{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:12px;border-radius:14px;text-align:center;z-index:9}#msg:empty{display:none}
+#soundToggle{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:8;border:1px solid var(--ln);border-radius:999px;padding:9px 12px;background:var(--cd);color:var(--tx);font-family:inherit;font-size:13px;line-height:1.2;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer}#soundToggle:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
 .lg{font-size:14px;max-height:220px;overflow:auto}.lg div{padding:3px 0;border-bottom:1px solid var(--ln)}
 .av.e{font-size:22px;color:#fff}.av.sm{width:26px;height:26px;border-radius:9px;font-size:15px;display:inline-grid;vertical-align:middle;margin-right:8px}
 .avprev{display:flex;justify-content:center;margin:6px 0}.avprev .av{width:72px;height:72px;border-radius:24px;font-size:40px}
 .avp{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}.avp button{aspect-ratio:1;border-radius:14px;border:2px solid var(--ln);background:var(--cd);font-size:24px;cursor:pointer;padding:0}.avp button.sel{border-color:var(--ac);box-shadow:0 0 0 2px var(--ac)}
 .avc{display:flex;gap:10px;justify-content:center;margin-top:12px}.avc button{width:34px;height:34px;border-radius:50%;border:3px solid var(--cd);box-shadow:0 0 0 2px var(--ln);cursor:pointer;padding:0}.avc button.sel{box-shadow:0 0 0 3px var(--tx)}
-</style></head><body><canvas id="ambient" aria-hidden="true"></canvas><div id="app"></div><div id="msg" role="status"></div>
+</style></head><body><canvas id="ambient" aria-hidden="true"></canvas><div id="app"></div><div id="msg" role="status"></div><button id="soundToggle" type="button" onclick="toggleSound()" aria-label="Desativar sons do jogo" aria-pressed="true">♫ Som ligado</button>
 <script>
 (()=>{
 const canvas=document.getElementById('ambient'),ctx=canvas.getContext('2d',{alpha:true}),reduce=matchMedia('(prefers-reduced-motion: reduce)');
@@ -77,7 +78,16 @@ const IM={logo:['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAaQAAACkCAYAAADYO
 Object.entries(IM).forEach(([k,v])=>document.documentElement.style.setProperty("--m-"+(k==="hero"?"h":k),`url(${v[0]})`));
 const $=s=>document.querySelector(s),K=['cube','rect','l'],N={cube:'Cubo',rect:'Retângulo',l:'Peça em L'},V={cube:1,rect:3,l:4},CL={cube:'#2d9cdb',rect:'#f2994a',l:'#27ae60'};
 const PH={lobby:'Sala de espera',dist:'1 · Distribuição',build:'2 · Construção',bet:'3 · Apostas',reveal:'4 · Revelação',final:'Final'};
-let db,uid,code,R,room,players=[],seen=null,rot=0,anim=false,tk=false,subs=[],pick_=null,hv='',lv='',flt='all',nm='';
+let db,uid,code,R,room,players=[],seen=null,rot=0,anim=false,tk=false,subs=[],pick_=null,hv='',lv='',flt='all',nm='',heardRound=0,resultsPrimed=false;
+let soundEnabled=(()=>{try{return localStorage.getItem('stkSound')!=='off'}catch(e){return true}})(),audioCtx=null;
+function wakeAudio(){if(!soundEnabled)return Promise.resolve();const C=window.AudioContext||window.webkitAudioContext;if(!C)return Promise.resolve();try{audioCtx=audioCtx||new C();return audioCtx.state==='suspended'?audioCtx.resume().catch(()=>{}):Promise.resolve()}catch(e){return Promise.resolve()}}
+function audioReady(play){if(!soundEnabled)return;wakeAudio().then(()=>{if(soundEnabled&&audioCtx&&audioCtx.state==='running')play()}).catch(()=>{})}
+function tone(freq,when,duration=.12,volume=.025,type='sine'){if(!soundEnabled||!audioCtx||audioCtx.state!=='running')return;try{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(freq,when);g.gain.setValueAtTime(.0001,when);g.gain.exponentialRampToValueAtTime(volume,when+.012);g.gain.exponentialRampToValueAtTime(.0001,when+duration);o.connect(g);g.connect(audioCtx.destination);o.start(when);o.stop(when+duration+.02)}catch(e){}}
+const Sounds={spin(){audioReady(()=>{let t=audioCtx.currentTime+.02;for(let i=0;i<18;i++){tone(390+(i%4)*48,t,.045,.012,'triangle');t+=.065+i*.011}})},result(k){audioReady(()=>{const notes={cube:[523,659],rect:[440,554,659],l:[587,740,880]}[k]||[523,659],t=audioCtx.currentTime+.04;notes.forEach((f,i)=>tone(f,t+i*.11,.2,.032,'sine'))})},round(won){audioReady(()=>{const ns=won?[523,659,784]:[392,330],t=audioCtx.currentTime+.03;ns.forEach((f,i)=>tone(f,t+i*.14,.24,.027,'sine'))})},haptic(){try{if(navigator.vibrate)navigator.vibrate([24,35,42])}catch(e){}}};
+function updateSoundButton(){const b=$('#soundToggle');if(!b)return;b.textContent=soundEnabled?'♫ Som ligado':'♫ Som desligado';b.setAttribute('aria-pressed',String(soundEnabled));b.setAttribute('aria-label',soundEnabled?'Desativar sons do jogo':'Ativar sons do jogo')}
+window.toggleSound=()=>{soundEnabled=!soundEnabled;try{localStorage.setItem('stkSound',soundEnabled?'on':'off')}catch(e){}if(soundEnabled)wakeAudio();else if(audioCtx&&audioCtx.state==='running')audioCtx.suspend().catch(()=>{});updateSoundButton()};
+document.addEventListener('pointerdown',()=>{if(soundEnabled)wakeAudio()},{once:true,passive:true});document.addEventListener('click',()=>{if(soundEnabled)wakeAudio()},{once:true});
+updateSoundButton();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const me=()=>players.find(p=>p.id===uid),tot=p=>p.inv.cube+p.inv.rect+p.inv.l,pp=id=>`rooms/${code}/p/${id}`;
 let tm;const toast=t=>{$('#msg').textContent=t;clearTimeout(tm);tm=setTimeout(()=>$('#msg').textContent='',4000)};
@@ -113,7 +123,7 @@ const WT={cube:50,rect:30,l:20},SEG=(()=>{let s=0;return K.map(k=>{const w=WT[k]
 function wheel(){const f=(a,r)=>[(100+r*Math.sin(a*Math.PI/180)).toFixed(1),(100-r*Math.cos(a*Math.PI/180)).toFixed(1)];
 const svg=`<svg viewBox="0 0 200 200" aria-hidden="true">${SEG.map(g=>{const[a,b]=f(g.s,100),[x,y]=f(g.s+g.w,100);return`<path d="M100 100L${a} ${b}A100 100 0 ${g.w>180?1:0} 1 ${x} ${y}Z" fill="${FILL[g.k]}" stroke="#161618" stroke-width="2"/>`}).join('')}<circle cx="100" cy="100" r="9" fill="#fff" stroke="#161618" stroke-width="3"/></svg>`;
 return`<div id="wd" role="img" aria-label="Roleta">${svg}${SEG.map(g=>`<span class="ic ${g.k}" style="color:${ICC[g.k]};width:calc(var(--s)*${ICS[g.k][0]});height:calc(var(--s)*${ICS[g.k][1]});transform:translate(-50%,-50%) rotate(${g.c}deg) translateY(calc(var(--s)*-.3))"></span>`).join('')}</div>`}
-function enter(c){code=c;sv(c);R=db.doc('rooms/'+c);seen=null;room=null;players=[];subs.forEach(u=>u());
+function enter(c){code=c;sv(c);R=db.doc('rooms/'+c);seen=null;heardRound=0;resultsPrimed=false;room=null;players=[];subs.forEach(u=>u());
 $('#app').innerHTML=`<header class="top"><span class="logo" role="img" aria-label="STACK"></span><span class="chip2" id="hc"></span><button class="x" id="lvb" onclick="leave()">Sair</button></header><main class="c"><div id="hs"></div>
 <div id="wh" hidden><div id="pt"></div>${wheel()}<div id="wr" class="mu" aria-live="polite">&nbsp;</div><div class="leg">${K.map(k=>`<span><i class="ic ${k}"></i>${WT[k]}%</span>`).join('')}</div></div><div id="dyn"></div></main>`;
 subs=[R.onSnapshot(s=>{room=s.data();render();tick()},e=>toast(e.message)),
@@ -126,12 +136,12 @@ await db.doc(pp(uid)).delete();
 if(!rest.length)await db.doc('rooms/'+c).delete();
 subs.forEach(u=>u());subs=[];sv(null);code=null;room=null;players=[];home()});
 function detect(){if(seen===null){seen={};players.forEach(p=>seen[p.id]=p.last?p.last.n:0);return}
-players.forEach(p=>{if(p.last&&p.last.n>(seen[p.id]||0)){seen[p.id]=p.last.n;animate(p.name,p.last.k,p.last.o)}})}
-function animate(name,k,o){anim=true;const g=SEG[K.indexOf(k)];rot=Math.ceil(rot/360)*360+1800-(g.c+(o||0)*g.w);$('#wd').style.transform=`rotate(${rot}deg)`;$('#wr').className='mu';$('#wr').textContent=name+' está girando…';
-setTimeout(()=>{anim=false;$('#wr').className='mu pop';$('#wr').innerHTML=`${esc(name)} tirou <i class="ic ${k}" style="height:1.3em;color:var(--ac)"></i> <b>${N[k]}</b>`;render();tick()},3300)}
+players.forEach(p=>{if(p.last&&p.last.n>(seen[p.id]||0)){seen[p.id]=p.last.n;animate(p.name,p.last.k,p.last.o,p.id===uid)}})}
+function animate(name,k,o,isLocal){anim=true;Sounds.spin();const g=SEG[K.indexOf(k)];rot=Math.ceil(rot/360)*360+1800-(g.c+(o||0)*g.w);$('#wd').style.transform=`rotate(${rot}deg)`;$('#wr').className='mu';$('#wr').textContent=name+' está girando…';
+setTimeout(()=>{anim=false;$('#wr').className='mu pop';$('#wr').innerHTML=`${esc(name)} tirou <i class="ic ${k}" style="height:1.3em;color:var(--ac)"></i> <b>${N[k]}</b>`;Sounds.result(k);if(isLocal)Sounds.haptic();render();tick()},3300)}
 
 const st=p=>({dist:`${p.done}/${p.owed} giros`,build:p.built?'Torre pronta':'Construindo',bet:p.bet?'Apostou':'Escolhendo',reveal:p.h!=null?p.h+' cm':'Medindo'}[room.phase]||'');
-function render(){if(!room||!$('#dyn'))return;const r=room,ph=r.phase,p=me();
+function render(){if(!room||!$('#dyn'))return;const r=room,ph=r.phase,p=me(),rr=Object.keys(r.results||{}).reduce((m,n)=>Math.max(m,+n||0),0);if(!resultsPrimed){heardRound=rr;resultsPrimed=true}else if(rr>heardRound){heardRound=rr;const own=(r.results[rr]||[]).find(x=>x.id===uid);Sounds.round(!!(own&&own.won))}
 $('#hc').textContent=code;const si=['dist','build','bet','reveal'].indexOf(ph);$('#hs').innerHTML=`<div class="hd"><b>${r.round?`Rodada ${Math.min(r.round,6)} de 6`:'Aguardando início'}</b><span class="chip">${PH[ph]}</span></div><div class="pips">${[1,2,3,4,5,6].map(i=>`<i class="${i<r.round?'dn':i===r.round?'cu':''}"></i>`).join('')}</div>${si>=0?`<div class="steps">${[0,1,2,3].map(i=>`<i class="${i<si?'on':i===si?'on cur':''}"></i>`).join('')}</div>`:''}`;$('#wh').hidden=!['dist','build','bet','reveal'].includes(ph);
 const cards=players.map(x=>{const on=ph==='dist'&&x.seat===r.turn;return`<div class="card pc ${on?'on':''}">${avt(x,on)}<div class="pn"><b>${esc(x.name)}${x.id===r.owner?' ★':''}${x.id===uid?' (você)':''}</b><span class="mu">${st(x)}</span></div><div class="iv">${K.map(k=>`<span class="ib"><i class="ic ${k}"></i>${x.inv[k]}</span>`).join('')}<b class="tt">${tot(x)}</b></div></div>`}).join('');
 let a='';if(!p)a='<p class="card">Você não está nesta sala.</p>';else if(ph==='lobby')a=lobby();else if(ph==='final')a=final();else a=actions(p)+prev();
