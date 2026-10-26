@@ -80,11 +80,17 @@ function wheel(){const f=(a,r)=>[(100+r*Math.sin(a*Math.PI/180)).toFixed(1),(100
 const svg=`<svg viewBox="0 0 200 200" aria-hidden="true">${SEG.map(g=>{const[a,b]=f(g.s,100),[x,y]=f(g.s+g.w,100);return`<path d="M100 100L${a} ${b}A100 100 0 ${g.w>180?1:0} 1 ${x} ${y}Z" fill="${FILL[g.k]}" stroke="#161618" stroke-width="2"/>`}).join('')}<circle cx="100" cy="100" r="9" fill="#fff" stroke="#161618" stroke-width="3"/></svg>`;
 return`<div id="wd" role="img" aria-label="Roleta">${svg}${SEG.map(g=>`<span class="ic ${g.k}" style="color:${ICC[g.k]};width:calc(var(--s)*${ICS[g.k][0]});height:calc(var(--s)*${ICS[g.k][1]});transform:translate(-50%,-50%) rotate(${g.c}deg) translateY(calc(var(--s)*-.3))"></span>`).join('')}</div>`}
 function enter(c){code=c;sv(c);R=db.doc('rooms/'+c);seen=null;room=null;players=[];subs.forEach(u=>u());
-$('#app').innerHTML=`<header class="top"><span class="logo" role="img" aria-label="STACK"></span><span class="chip2" id="hc"></span><button class="x" onclick="leave()">Sair</button></header><main class="c"><div id="hs"></div>
+$('#app').innerHTML=`<header class="top"><span class="logo" role="img" aria-label="STACK"></span><span class="chip2" id="hc"></span><button class="x" id="lvb" onclick="leave()">Sair</button></header><main class="c"><div id="hs"></div>
 <div id="wh" hidden><div id="pt"></div>${wheel()}<div id="wr" class="mu" aria-live="polite">&nbsp;</div><div class="leg">${K.map(k=>`<span><i class="ic ${k}"></i>${WT[k]}%</span>`).join('')}</div></div><div id="dyn"></div></main>`;
 subs=[R.onSnapshot(s=>{room=s.data();render();tick()},e=>toast(e.message)),
 db.collection(`rooms/${c}/p`).onSnapshot(s=>{players=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.seat-b.seat);detect();render();tick()},e=>toast(e.message))]}
-const leave=()=>{subs.forEach(u=>u());sv(null);home()};
+let lc=0;const leave=go(async()=>{
+if(!lc){lc=1;$('#lvb').textContent='Tem certeza?';setTimeout(()=>{lc=0;const b=$('#lvb');if(b)b.textContent='Sair'},4000);return}
+lc=0;const c=code,rest=players.filter(p=>p.id!==uid);
+if(room&&room.owner===uid&&rest.length)await db.doc('rooms/'+c).update({owner:rest[0].id});
+await db.doc(pp(uid)).delete();
+if(!rest.length)await db.doc('rooms/'+c).delete();
+subs.forEach(u=>u());subs=[];sv(null);code=null;room=null;players=[];home()});
 function detect(){if(seen===null){seen={};players.forEach(p=>seen[p.id]=p.last?p.last.n:0);return}
 players.forEach(p=>{if(p.last&&p.last.n>(seen[p.id]||0)){seen[p.id]=p.last.n;animate(p.name,p.last.k,p.last.o)}})}
 function animate(name,k,o){anim=true;const g=SEG[K.indexOf(k)];rot=Math.ceil(rot/360)*360+1800-(g.c+(o||0)*g.w);$('#wd').style.transform=`rotate(${rot}deg)`;$('#wr').className='mu';$('#wr').textContent=name+' está girando…';
@@ -101,7 +107,7 @@ function lobby(){const o=room.owner===uid;return`<div class="card"><p class="mu"
 <button class="b big" onclick="start()" ${players.length<1?'disabled':''}>Iniciar partida (${players.length}/4)</button><p class="mu">${players.length<2?'Modo teste: você começará sozinho.':'Pronto para iniciar.'}</p>`:'<p class="mu">Aguardando o criador iniciar…</p>')}
 const copy=go(async()=>{await navigator.clipboard.writeText(location.href.split('#')[0]+'#'+code);toast('Link copiado. Código: '+code)});
 
-const start=go(async()=>{if(players.length<1)return;for(const p of players)await db.doc(pp(p.id)).update({owed:3,done:0});await R.update({status:'playing',round:1,phase:'dist',turn:1})});
+const start=go(async()=>{if(players.length<1)return;for(const p of players)await db.doc(pp(p.id)).update({owed:3,done:0});await R.update({status:'playing',round:1,phase:'dist',turn:Math.min(...players.map(p=>p.seat))})});
 const act=(u,m)=>db.doc(pp(uid)).update({...u,log:[...me().log,{t:Date.now(),r:room.round,m}]});
 function actions(p){const r=room;switch(r.phase){
 case'dist':{const c=players.find(x=>x.seat===r.turn);return c&&c.id===uid&&p.done<p.owed?`<button class="b big" onclick="spin()" ${anim?'disabled':''}>Girar a roleta (${p.owed-p.done} restantes)</button>`:`<p class="mu">Vez de <b>${esc(c?c.name:'…')}</b> · você recebe ${p.owed} peças</p>`}
@@ -125,7 +131,7 @@ for(const p of P){const won=p.h===max,base=won?5:4,extra=won?V[p.bet]:0,t=last?0
 res.push({id:p.id,name:p.name,h:p.h,won,bet:p.bet,base,extra,t});
 const log=[...p.log,{t:Date.now(),r:r.round,m:`${p.name} ${won?'venceu':'perdeu'} a aposta da rodada ${r.round}.`}];if(!last)log.push({t:Date.now()+1,r:r.round,m:`${p.name} receberá ${t} peças na rodada ${r.round+1}.`});
 await db.doc(pp(p.id)).update({inv,lost:p.lost+(keep?0:1),owed:t,done:0,built:false,bet:null,h:null,log})}
-await R.update(last?{phase:'final',results:{...r.results,[r.round]:res}}:{round:r.round+1,phase:'dist',turn:1,results:{...r.results,[r.round]:res}})}
+await R.update(last?{phase:'final',results:{...r.results,[r.round]:res}}:{round:r.round+1,phase:'dist',turn:Math.min(...P.map(p=>p.seat)),results:{...r.results,[r.round]:res}})}
 function prev(){const rd=room.results&&room.results[room.round-1];if(!rd||room.phase!=='dist')return'';return`<div class="card ov"><b>Resultado da rodada ${room.round-1}</b><table>${rd.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.h} cm</td><td>${N[x.bet]}</td><td class="${x.won?'w':'l'}">${x.won?'venceu':'perdeu'}</td><td>+${x.t}</td></tr>`).join('')}</table></div>`}
 function final(){const p=me(),all=players.every(x=>x.layer!=null);
 let h=`<h2>Fim da partida</h2><p class="mu">Cada jogador informa a camada alcançada pela própria torre.</p>`;
@@ -141,13 +147,14 @@ const SUPABASE_URL='https://uguckpyauwyhnflrpfms.supabase.co',SUPABASE_KEY='eyJh
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 async function bootAuth(){let{data:{session}}=await sb.auth.getSession();if(!session){const r=await sb.auth.signInAnonymously();if(r.error)throw r.error;session=r.data.session}return session.user.id}
 const par=p=>p.split('/').slice(0,-1).join('/');
-function watch(filter,load,er){load().catch(e=>er&&er(e));const ch=sb.channel('c'+Math.random().toString(36).slice(2)).on('postgres_changes',{event:'*',schema:'public',table:'docs',filter},()=>load().catch(()=>{})).subscribe();const iv=setInterval(()=>load().catch(()=>{}),4000);return()=>{clearInterval(iv);sb.removeChannel(ch)}}
+function watch(filter,load,er){load().catch(e=>er&&er(e));const ch=sb.channel('c'+Math.random().toString(36).slice(2)).on('postgres_changes',{event:'*',schema:'public',table:'docs',filter},()=>load().catch(()=>{})).on('postgres_changes',{event:'DELETE',schema:'public',table:'docs'},()=>load().catch(()=>{})).subscribe();const iv=setInterval(()=>load().catch(()=>{}),4000);return()=>{clearInterval(iv);sb.removeChannel(ch)}}
 function once(cb,pick){let last;return r=>{const j=JSON.stringify(pick(r));if(j!==last){last=j;cb(r)}}}
 const DB={
 doc(path){const o={
 async get(){const{data,error}=await sb.from('docs').select('data').eq('path',path).maybeSingle();if(error)throw error;return{exists:!!data,data:()=>data?data.data:undefined}},
 async set(v){const{error}=await sb.from('docs').upsert({path,parent:par(path),data:v});if(error)throw error},
 async update(v){const{error}=await sb.rpc('merge_doc',{p:path,d:v});if(error)throw error},
+async delete(){const{error}=await sb.from('docs').delete().eq('path',path);if(error)throw error},
 onSnapshot(cb,er){const f=once(cb,r=>[r.exists,r.data()]);return watch('path=eq.'+path,async()=>f(await o.get()),er)}};return o},
 collection(path){const o={
 async get(){const{data,error}=await sb.from('docs').select('path,data').eq('parent',path);if(error)throw error;return{docs:data.map(r=>({id:r.path.split('/').pop(),data:()=>r.data}))}},
